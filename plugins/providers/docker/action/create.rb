@@ -1,7 +1,11 @@
+require 'vagrant/util/scoped_hash_override'
+
 module VagrantPlugins
   module DockerProvider
     module Action
       class Create
+        include Vagrant::Util::ScopedHashOverride
+
         def initialize(app, env)
           @app = app
         end
@@ -102,12 +106,24 @@ module VagrantPlugins
             links << parts
           end
 
+          network_args = []
+          @machine_config.vm.networks.each do |network_type, original_options|
+            next unless network_type.to_s == 'private_network'
+            options = scoped_hash_override(original_options, :libvirt)
+            network_args.push(*['--ip', options[:ip]]) unless options[:ip].nil?
+            unless options[:network_name].nil?
+              network_args.push(*['--net', options[:network_name]])
+            end
+            # multiple nics is not supported yet
+            break
+          end
+
           {
             cmd:        @provider_config.cmd,
             detach:     true,
             env:        @provider_config.env,
             expose:     @provider_config.expose,
-            extra_args: @provider_config.create_args,
+            extra_args: @provider_config.create_args + network_args,
             hostname:   @machine_config.vm.hostname,
             image:      image,
             links:      links,
